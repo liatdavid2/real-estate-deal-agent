@@ -1,85 +1,113 @@
 from __future__ import annotations
 
-import base64
-import json
 import os
 import smtplib
-from email.mime.text import MIMEText
+from email.message import EmailMessage
 from pathlib import Path
 
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+
+def _parse_email_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+
+    return [
+        email.strip()
+        for email in value.split(",")
+        if email.strip()
+    ]
 
 
-class EmailSendError(RuntimeError):
-    pass
+def _write_console_report(
+    subject: str,
+    html_body: str,
+    text_body: str,
+    artifacts_dir: str,
+    recipients: list[str],
+) -> None:
+    artifacts_path = Path(artifacts_dir)
+    artifacts_path.mkdir(parents=True, exist_ok=True)
+
+    html_path = artifacts_path / "latest_report.html"
+    text_path = artifacts_path / "latest_report.txt"
+
+    html_path.write_text(html_body, encoding="utf-8")
+    text_path.write_text(text_body, encoding="utf-8")
+
+    print("Email backend is console.")
+    print(f"Subject: {subject}")
+    print(f"Recipients: {', '.join(recipients) if recipients else 'N/A'}")
+    print(f"Report written to {html_path}")
 
 
-def send_console(subject: str, html_body: str, text_body: str, artifacts_dir: str) -> None:
-    out_dir = Path(artifacts_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "latest_report.html").write_text(html_body, encoding="utf-8")
-    (out_dir / "latest_report.txt").write_text(text_body, encoding="utf-8")
-    print(f"Email backend is console. Report written to {out_dir / 'latest_report.html'}")
-
-
-def send_smtp(subject: str, html_body: str, text_body: str) -> None:
-    host = os.getenv("SMTP_HOST")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    username = os.getenv("SMTP_USERNAME")
-    password = os.getenv("SMTP_PASSWORD")
+def _send_smtp_email(
+    subject: str,
+    html_body: str,
+    text_body: str,
+    recipients: list[str],
+) -> None:
     sender = os.getenv("EMAIL_FROM")
-    recipient = os.getenv("EMAIL_TO")
-    use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_username = os.getenv("SMTP_USERNAME")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 
-    missing = [name for name, value in {
-        "SMTP_HOST": host,
-        "SMTP_USERNAME": username,
-        "SMTP_PASSWORD": password,
-        "EMAIL_FROM": sender,
-        "EMAIL_TO": recipient,
-    }.items() if not value]
-    if missing:
-        raise EmailSendError(f"Missing SMTP settings: {', '.join(missing)}")
+    if not sender:
+        raise RuntimeError("EMAIL_FROM is missing.")
 
-    msg = MIMEText(html_body, "html", "utf-8")
-    msg["Subject"] = subject
-    msg["From"] = sender
-    msg["To"] = recipient
+    if not recipients:
+        raise RuntimeError("EMAIL_TO is missing or empty.")
 
-    with smtplib.SMTP(host, port, timeout=30) as server:
-        if use_tls:
+    if not smtp_username:
+        raise RuntimeError("SMTP_USERNAME is missing.")
+
+    if not smtp_password:
+        raise RuntimeError("SMTP_PASSWORD is missing.")
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = ", ".join(recipients)
+
+    message.set_content(text_body)
+    message.add_alternative(html_body, subtype="html")
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        if smtp_use_tls:
             server.starttls()
-        server.login(username, password)
-        server.sendmail(sender, [recipient], msg.as_string())
+
+        server.login(smtp_username, smtp_password)
+        server.send_message(message, from_addr=sender, to_addrs=recipients)
+
+    print(f"Email sent to: {', '.join(recipients)}")
 
 
-def send_gmail_api(subject: str, html_body: str, text_body: str) -> None:
-    token_json = os.getenv("GMAIL_TOKEN_JSON")
-    sender = os.getenv("EMAIL_FROM")
-    recipient = os.getenv("EMAIL_TO")
-    if not token_json or not sender or not recipient:
-        raise EmailSendError("GMAIL_TOKEN_JSON, EMAIL_FROM, and EMAIL_TO are required for Gmail API backend.")
-
-    token_info = json.loads(token_json)
-    credentials = Credentials.from_authorized_user_info(token_info, scopes=["https://www.googleapis.com/auth/gmail.send"])
-    service = build("gmail", "v1", credentials=credentials)
-
-    msg = MIMEText(html_body, "html", "utf-8")
-    msg["To"] = recipient
-    msg["From"] = sender
-    msg["Subject"] = subject
-    encoded = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
-    service.users().messages().send(userId="me", body={"raw": encoded}).execute()
-
-
-def send_email(subject: str, html_body: str, text_body: str, artifacts_dir: str) -> None:
+def send_email(
+    subject: str,
+    html_body: str,
+    text_body: str,
+    artifacts_dir: str,
+) -> None:
     backend = os.getenv("EMAIL_BACKEND", "console").lower()
+    recipients = _parse_email_list(os.getenv("EMAIL_TO"))
+
     if backend == "console":
-        send_console(subject, html_body, text_body, artifacts_dir)
-    elif backend == "smtp":
-        send_smtp(subject, html_body, text_body)
-    elif backend == "gmail_api":
-        send_gmail_api(subject, html_body, text_body)
-    else:
-        raise EmailSendError(f"Unsupported EMAIL_BACKEND: {backend}")
+        _write_console_report(
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+            artifacts_dir=artifacts_dir,
+            recipients=recipients,
+        )
+        return
+
+    if backend == "smtp":
+        _send_smtp_email(
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+            recipients=recipients,
+        )
+        return
+
+    raise RuntimeError(f"Unsupported EMAIL_BACKEND: {backend}")
