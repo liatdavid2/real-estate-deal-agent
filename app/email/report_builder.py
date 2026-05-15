@@ -223,11 +223,13 @@ def _make_rows(
     evaluations: list[ListingEvaluation],
     raw_items: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
-    if evaluations:
-        return [_row_from_evaluation(item) for item in evaluations]
-
+    # Prefer raw_items so the email always shows every collected apartment,
+    # including listings that were filtered out and the reason why.
     if raw_items:
         return [_row_from_raw_item(item) for item in raw_items]
+
+    if evaluations:
+        return [_row_from_evaluation(item) for item in evaluations]
 
     return []
 

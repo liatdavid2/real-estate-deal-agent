@@ -71,7 +71,7 @@ profiles:
 
   - name: haifa_2_3_rooms_rented_good_area
     enabled: true
-    description: "2-3 room apartments for sale in good Haifa areas up to 800,000 ILS, preferably rented"
+    description: "2-3 room apartments for sale in Haifa up to 800,000 ILS, rented is a bonus"
     transaction: sale
     filters:
       city: "חיפה"
@@ -79,31 +79,11 @@ profiles:
       max_rooms: 3
       max_price: 800000
       min_size_sqm: 0
-      neighborhood_whitelist:
-        - "אחוזה"
-        - "כרמליה"
-        - "מרכז הכרמל"
-        - "רמת אלמוגי"
-        - "רמת בגין"
-        - "נוה שאנן"
-        - "נווה שאנן"
-        - "רמת אשכול"
-        - "רוממה"
-        - "הדר"
-        - "הדר הכרמל"
-      required_any_keywords:
-        - "מושכרת"
-        - "מושכר"
-        - "שוכר"
-        - "שוכרים"
-        - "שכירות"
-        - "תשואה"
-        - "החזר שכירות"
       excluded_keywords:
-        - "דרושה השקעה מלאה"
         - "משרד"
         - "חנות"
         - "מסחרי"
+
     scoring:
       target_price_per_sqm: 15000
       excellent_price_per_sqm: 12000
@@ -131,6 +111,7 @@ profiles:
         - "חניה"
         - "מעלית"
         - "מרפסת"
+
     sources:
       - name: yad2
         actor_id: swerve/yad2-scraper
@@ -144,6 +125,7 @@ profiles:
           maxPrice: 800000
           maxItems: 5
           enrichListings: false
+
       - name: madlan_flat
         actor_id: swerve/madlan-scraper
         limit: 5
@@ -156,6 +138,7 @@ profiles:
           maxRooms: 3
           maxPrice: 800000
           maxItems: 5
+
       - name: madlan_garden
         actor_id: swerve/madlan-scraper
         limit: 3
