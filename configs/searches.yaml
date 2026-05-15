@@ -8,36 +8,41 @@ settings:
 profiles:
   - name: givatayim_4_rooms_deals
     enabled: true
-    description: "4-room bargain apartments in Givatayim"
+    description: "4-room bargain apartments in Givatayim up to 2,900,000 ILS"
     transaction: sale
     filters:
       city: "גבעתיים"
       min_rooms: 4
       max_rooms: 4
-      max_price: 3300000
-      min_size_sqm: 80
+      max_price: 2900000
+      min_size_sqm: 50
       excluded_keywords:
-        - "קומת קרקע"
         - "מרתף"
+        - "מחסן"
+        - "חנות"
+        - "משרד"
       nice_to_have_keywords:
         - "מעלית"
         - "חניה"
         - "ממד"
         - "ממ\"ד"
+        - "מרפסת"
     scoring:
-      target_price_per_sqm: 36000
-      excellent_price_per_sqm: 32000
+      target_price_per_sqm: 35000
+      excellent_price_per_sqm: 31000
       good_neighborhoods:
         - "בורוכוב"
         - "שיינקין"
         - "ארלוזורוב"
         - "רמבם"
+        - "רמב\"ם"
         - "קריית יוסף"
       nice_to_have_keywords:
         - "מעלית"
         - "חניה"
         - "ממד"
         - "ממ\"ד"
+        - "מרפסת"
     sources:
       - name: yad2
         actor_id: swerve/yad2-scraper
@@ -46,12 +51,12 @@ profiles:
         run_input:
           city: "גבעתיים"
           dealType: buy
-          propertyType: flat
-          roomsMin: 4
-          roomsMax: 4
-          maxPrice: 3300000
+          minRooms: 4
+          maxRooms: 4
+          maxPrice: 2900000
           maxItems: 5
-      - name: madlan
+          enrichListings: false
+      - name: madlan_flat
         actor_id: swerve/madlan-scraper
         limit: 5
         estimated_cost_usd: 0.05
@@ -59,21 +64,21 @@ profiles:
           city: "גבעתיים"
           dealType: buy
           propertyType: flat
-          roomsMin: 4
-          roomsMax: 4
-          maxPrice: 3300000
+          minRooms: 4
+          maxRooms: 4
+          maxPrice: 2900000
           maxItems: 5
 
-  - name: haifa_3_rooms_rented_good_area
+  - name: haifa_2_3_rooms_rented_good_area
     enabled: true
-    description: "3-room apartments for sale in good Haifa areas, preferably already rented"
+    description: "2-3 room apartments for sale in good Haifa areas up to 800,000 ILS, preferably rented"
     transaction: sale
     filters:
       city: "חיפה"
-      min_rooms: 1
+      min_rooms: 2
       max_rooms: 3
       max_price: 800000
-      min_size_sqm: 35
+      min_size_sqm: 30
       neighborhood_whitelist:
         - "אחוזה"
         - "כרמליה"
@@ -83,17 +88,25 @@ profiles:
         - "נוה שאנן"
         - "נווה שאנן"
         - "רמת אשכול"
+        - "רוממה"
+        - "הדר"
+        - "הדר הכרמל"
       required_any_keywords:
         - "מושכרת"
         - "מושכר"
         - "שוכר"
         - "שוכרים"
         - "שכירות"
+        - "תשואה"
+        - "החזר שכירות"
       excluded_keywords:
         - "דרושה השקעה מלאה"
+        - "משרד"
+        - "חנות"
+        - "מסחרי"
     scoring:
-      target_price_per_sqm: 22000
-      excellent_price_per_sqm: 19000
+      target_price_per_sqm: 15000
+      excellent_price_per_sqm: 12000
       good_neighborhoods:
         - "אחוזה"
         - "כרמליה"
@@ -103,9 +116,18 @@ profiles:
         - "נוה שאנן"
         - "נווה שאנן"
         - "רמת אשכול"
+        - "רוממה"
+        - "הדר"
+        - "הדר הכרמל"
       nice_to_have_keywords:
         - "מושכרת"
+        - "מושכר"
         - "שוכר"
+        - "שכירות"
+        - "תשואה"
+        - "החזר שכירות"
+        - "דירת גן"
+        - "גינה"
         - "חניה"
         - "מעלית"
         - "מרפסת"
@@ -117,12 +139,12 @@ profiles:
         run_input:
           city: "חיפה"
           dealType: buy
-          propertyType: flat
-          roomsMin: 3
-          roomsMax: 3
+          minRooms: 2
+          maxRooms: 3
           maxPrice: 800000
           maxItems: 5
-      - name: madlan
+          enrichListings: false
+      - name: madlan_flat
         actor_id: swerve/madlan-scraper
         limit: 5
         estimated_cost_usd: 0.05
@@ -130,7 +152,19 @@ profiles:
           city: "חיפה"
           dealType: buy
           propertyType: flat
-          roomsMin: 3
-          roomsMax: 3
+          minRooms: 2
+          maxRooms: 3
           maxPrice: 800000
           maxItems: 5
+      - name: madlan_garden
+        actor_id: swerve/madlan-scraper
+        limit: 3
+        estimated_cost_usd: 0.03
+        run_input:
+          city: "חיפה"
+          dealType: buy
+          propertyType: gardenapartment
+          minRooms: 2
+          maxRooms: 3
+          maxPrice: 800000
+          maxItems: 3

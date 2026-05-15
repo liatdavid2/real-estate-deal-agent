@@ -181,7 +181,10 @@ class ApifyRealEstateCollector:
         dataset_id = run["defaultDatasetId"]
         dataset_client = self.client.dataset(dataset_id)
         page = dataset_client.list_items(limit=source.limit, clean=True)
-        items = getattr(page, "items", None) or page.get("items", [])
+        if isinstance(page, dict):
+            items = page.get("items", [])
+        else:
+            items = getattr(page, "items", [])
         listings = [normalize_apify_item(item, source.name, profile.transaction) for item in items]
         return listings
 

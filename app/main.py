@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from app.agents.deal_score_agent import score_listing
-from app.agents.filter_agent import filter_listings
+from app.agents.filter_agent import filter_listings, listing_matches_profile
 from app.budget.apify_budget import ApifyBudgetGuard, BudgetExceededError, BudgetGuardError
 from app.collectors.apify_collector import ApifyRealEstateCollector
 from app.config import SearchProfile, load_config
@@ -17,31 +18,59 @@ from app.models import ListingEvaluation
 from app.storage.sqlite_store import SQLiteListingStore
 
 
-def _select_profiles(profiles: list[SearchProfile], names: list[str] | None, all_profiles: bool) -> list[SearchProfile]:
+def _select_profiles(
+    profiles: list[SearchProfile],
+    names: list[str] | None,
+    all_profiles: bool,
+) -> list[SearchProfile]:
     enabled = [p for p in profiles if p.enabled]
+
     if all_profiles:
         return enabled
+
     if names:
         requested = set(names)
         return [p for p in enabled if p.name in requested]
+
     if enabled:
         return [enabled[0]]
+
     return []
 
 
-def run(config_path: str, profile_names: list[str] | None, all_profiles: bool, send: bool, include_existing: bool) -> list[ListingEvaluation]:
+def run(
+    config_path: str,
+    profile_names: list[str] | None,
+    all_profiles: bool,
+    send: bool,
+    include_existing: bool,
+) -> list[ListingEvaluation]:
     load_dotenv()
+
     config = load_config(config_path)
     profiles = _select_profiles(config.profiles, profile_names, all_profiles)
+
     if not profiles:
         raise RuntimeError("No enabled search profiles selected.")
 
-    sqlite_path = config.settings.get("sqlite_path") or os.getenv("SQLITE_PATH", "data/real_estate_agent.db")
-    artifacts_dir = config.settings.get("artifacts_dir") or os.getenv("ARTIFACTS_DIR", "artifacts")
-    subject_prefix = config.settings.get("email_subject_prefix", "Daily Apartment Deals")
+    sqlite_path = config.settings.get("sqlite_path") or os.getenv(
+        "SQLITE_PATH",
+        "data/real_estate_agent.db",
+    )
+    artifacts_dir = config.settings.get("artifacts_dir") or os.getenv(
+        "ARTIFACTS_DIR",
+        "artifacts",
+    )
+    subject_prefix = config.settings.get(
+        "email_subject_prefix",
+        "Daily Apartment Deals",
+    )
+
+    Path(artifacts_dir).mkdir(parents=True, exist_ok=True)
 
     budget_guard = ApifyBudgetGuard()
     budget_notes: list[str] = []
+
     try:
         if budget_guard.enabled and budget_guard.enable_platform_hard_limit:
             budget_notes.append(budget_guard.set_platform_hard_limit())
@@ -50,11 +79,14 @@ def run(config_path: str, profile_names: list[str] | None, all_profiles: bool, s
 
     collector = ApifyRealEstateCollector(budget_guard=budget_guard)
     store = SQLiteListingStore(sqlite_path)
+
     evaluations: list[ListingEvaluation] = []
+    raw_report_items: list[dict] = []
 
     try:
         for profile in profiles:
             print(f"Collecting profile: {profile.name}")
+
             try:
                 raw_listings = collector.collect_profile(profile)
             except BudgetExceededError as exc:
@@ -67,15 +99,85 @@ def run(config_path: str, profile_names: list[str] | None, all_profiles: bool, s
                 print(note)
                 budget_notes.append(note)
                 break
+
             print(f"Collected {len(raw_listings)} listings before filtering for {profile.name}")
+
+            raw_path = Path(artifacts_dir, f"raw_{profile.name}.json")
+            raw_path.write_text(
+                json.dumps(
+                    [listing.model_dump(mode="json") for listing in raw_listings],
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            print(f"Raw listings written to {raw_path}")
+
+            debug_rows: list[dict] = []
+
+            for listing in raw_listings:
+                ok, failures = listing_matches_profile(listing, profile)
+
+                raw_report_items.append(
+                    {
+                        "profile_name": profile.name,
+                        "listing": listing,
+                        "filter_ok": ok,
+                        "filter_failures": failures,
+                    }
+                )
+
+                row = listing.model_dump(mode="json")
+                row["filter_ok"] = ok
+                row["filter_failures"] = failures
+                debug_rows.append(row)
+
+            debug_path = Path(artifacts_dir, f"filter_debug_{profile.name}.json")
+            debug_path.write_text(
+                json.dumps(debug_rows, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            print(f"Filter debug written to {debug_path}")
+
+            for row in debug_rows[:20]:
+                print(
+                    "[filter-debug]",
+                    f"source={row.get('source')}",
+                    f"ok={row.get('filter_ok')}",
+                    f"price={row.get('price')}",
+                    f"rooms={row.get('rooms')}",
+                    f"size={row.get('size_sqm')}",
+                    f"city={row.get('city')}",
+                    f"failures={row.get('filter_failures')}",
+                )
+
             matched = filter_listings(raw_listings, profile)
+
+            matched_path = Path(artifacts_dir, f"matched_{profile.name}.json")
+            matched_path.write_text(
+                json.dumps(
+                    [listing.model_dump(mode="json") for listing in matched],
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            print(f"Matched listings written to {matched_path}")
             print(f"Matched {len(matched)} listings after filtering for {profile.name}")
 
             for listing in matched:
                 status, previous_price = store.upsert_listing(profile.name, listing)
+
                 if status == "seen" and not include_existing:
                     continue
-                score, reasons, risks = score_listing(listing, profile, status=status, previous_price=previous_price)
+
+                score, reasons, risks = score_listing(
+                    listing,
+                    profile,
+                    status=status,
+                    previous_price=previous_price,
+                )
+
                 evaluations.append(
                     ListingEvaluation(
                         listing=listing,
@@ -87,13 +189,23 @@ def run(config_path: str, profile_names: list[str] | None, all_profiles: bool, s
                         previous_price=previous_price,
                     )
                 )
+
     finally:
         store.close()
 
     evaluations.sort(key=lambda ev: ev.score, reverse=True)
-    html_body = build_html_report(evaluations, notes=budget_notes)
-    text_body = build_text_report(evaluations, notes=budget_notes)
-    Path(artifacts_dir).mkdir(parents=True, exist_ok=True)
+
+    html_body = build_html_report(
+        evaluations,
+        notes=budget_notes,
+        raw_items=raw_report_items,
+    )
+    text_body = build_text_report(
+        evaluations,
+        notes=budget_notes,
+        raw_items=raw_report_items,
+    )
+
     Path(artifacts_dir, "latest_report.html").write_text(html_body, encoding="utf-8")
     Path(artifacts_dir, "latest_report.txt").write_text(text_body, encoding="utf-8")
 
@@ -110,10 +222,20 @@ def run(config_path: str, profile_names: list[str] | None, all_profiles: bool, s
 def main() -> None:
     parser = argparse.ArgumentParser(description="Real Estate Deal Finder Agent")
     parser.add_argument("--config", default="configs/searches.yaml")
-    parser.add_argument("--profile", action="append", dest="profiles", help="Profile name. Can be repeated.")
+    parser.add_argument(
+        "--profile",
+        action="append",
+        dest="profiles",
+        help="Profile name. Can be repeated.",
+    )
     parser.add_argument("--all-profiles", action="store_true")
     parser.add_argument("--send-email", action="store_true")
-    parser.add_argument("--include-existing", action="store_true", help="Send all current matches, useful for the first run.")
+    parser.add_argument(
+        "--include-existing",
+        action="store_true",
+        help="Send all current matches, useful for the first run.",
+    )
+
     args = parser.parse_args()
 
     run(
