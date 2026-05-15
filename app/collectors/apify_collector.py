@@ -115,7 +115,45 @@ def normalize_apify_item(raw: dict[str, Any], source_name: str, default_transact
     neighborhood = _first(raw, ["neighborhood", "neighborhoodName", "neighborhood_name", "area", "region"])
     street = _first(raw, ["street", "streetName", "street_name"])
     address = _first(raw, ["address", "fullAddress", "full_address", "location"])
-    description = _first(raw, ["description", "desc", "text", "details", "body"]) or ""
+    description = (
+        _first(raw, [
+            "description",
+            "desc",
+            "text",
+            "details",
+            "body",
+            "descriptionText",
+            "description_text",
+            "propertyDescription",
+            "property_description",
+            "listingDescription",
+            "listing_description",
+            "additionalInfo",
+            "additional_info",
+            "comment",
+            "comments",
+        ])
+        or _nested_first(raw, [
+            "property.description",
+            "property.descriptionText",
+            "property.details",
+            "metadata.description",
+            "metadata.descriptionText",
+            "metadata.details",
+            "listing.description",
+            "listing.descriptionText",
+            "item.description",
+            "item.descriptionText",
+            "data.description",
+            "data.descriptionText",
+        ])
+        or ""
+    )
+
+    if isinstance(description, dict):
+        description = " ".join(str(v) for v in description.values() if v not in (None, ""))
+    elif isinstance(description, list):
+        description = " ".join(str(v) for v in description if v not in (None, ""))
 
     price = _to_int(_first(raw, ["price", "priceValue", "price_value", "amount", "askingPrice"]))
     rooms = _to_float(_first(raw, ["rooms", "roomCount", "room_count", "numberOfRooms", "rooms_count"]))

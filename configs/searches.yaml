@@ -55,7 +55,7 @@ profiles:
           maxRooms: 4
           maxPrice: 2900000
           maxItems: 5
-          enrichListings: false
+          enrichListings: true
       - name: madlan_flat
         actor_id: swerve/madlan-scraper
         limit: 5
@@ -124,7 +124,7 @@ profiles:
           maxRooms: 3
           maxPrice: 800000
           maxItems: 5
-          enrichListings: false
+          enrichListings: true
 
       - name: madlan_flat
         actor_id: swerve/madlan-scraper

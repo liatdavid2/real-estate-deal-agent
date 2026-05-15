@@ -45,6 +45,46 @@ def _listing_text(listing: Any) -> str:
 
     return _clean_text(" ".join(str(part) for part in parts if part))
 
+def _description(listing: Any, max_len: int = 220) -> str:
+    description = getattr(listing, "description", None)
+
+    text = _clean_text(str(description or ""))
+
+    bad_values = {
+        "",
+        "n/a",
+        "none",
+        "null",
+        "givatayim",
+        "haifa",
+        "גבעתיים",
+        "חיפה",
+    }
+
+    if text.lower() in bad_values:
+        return "לא צויין"
+
+    # If the text is too short, it is probably only a title, street, city, or neighborhood.
+    if len(text) < 30:
+        return "לא צויין"
+
+    # If the description is mostly just location/title text, do not show it as a description.
+    title = _clean_text(str(getattr(listing, "title", "") or ""))
+    address = _clean_text(str(getattr(listing, "address", "") or ""))
+    city = _clean_text(str(getattr(listing, "city", "") or ""))
+    neighborhood = _clean_text(str(getattr(listing, "neighborhood", "") or ""))
+    street = _clean_text(str(getattr(listing, "street", "") or ""))
+
+    location_parts = [title, address, city, neighborhood, street]
+    location_parts = [part for part in location_parts if part]
+
+    if text in location_parts:
+        return "לא צויין"
+
+    if len(text) > max_len:
+        return text[:max_len].rstrip() + "..."
+
+    return text
 
 def _address(listing: Any) -> str:
     title = getattr(listing, "title", None)
@@ -273,6 +313,7 @@ def build_text_report(
                     f"Parking: {_parking(listing)}",
                     f"Elevator: {_elevator(listing)}",
                     f"Rent: {_rental_info(listing)}",
+                    f"Description: {_description(listing, max_len=300)}",
                 ]
             )
         )
@@ -343,12 +384,13 @@ def build_html_report(
               <thead>
                 <tr style="background:#f4f4f4;">
                   <th style="border:1px solid #ddd;padding:5px;width:12%;">מחיר</th>
-                  <th style="border:1px solid #ddd;padding:5px;width:32%;">כתובת</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:24%;">כתובת</th>
                   <th style="border:1px solid #ddd;padding:5px;width:8%;">חדרים</th>
                   <th style="border:1px solid #ddd;padding:5px;width:8%;">קומה</th>
                   <th style="border:1px solid #ddd;padding:5px;width:8%;">חניה</th>
                   <th style="border:1px solid #ddd;padding:5px;width:8%;">מעלית</th>
-                  <th style="border:1px solid #ddd;padding:5px;width:16%;">שכירות</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:14%;">שכירות</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:28%;">תיאור</th>
                   <th style="border:1px solid #ddd;padding:5px;width:8%;">סטטוס</th>
                 </tr>
               </thead>
@@ -378,6 +420,7 @@ def build_html_report(
                   <td style="border:1px solid #ddd;padding:5px;text-align:center;">{escape(_parking(listing))}</td>
                   <td style="border:1px solid #ddd;padding:5px;text-align:center;">{escape(_elevator(listing))}</td>
                   <td style="border:1px solid #ddd;padding:5px;white-space:nowrap;">{escape(_rental_info(listing))}</td>
+                  <td style="border:1px solid #ddd;padding:5px;font-size:11px;line-height:1.35;">{escape(_description(listing))}</td>
                   <td style="border:1px solid #ddd;padding:5px;font-size:11px;">{escape(status_text)}</td>
                 </tr>
                 """
