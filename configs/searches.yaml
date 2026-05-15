@@ -1,0 +1,137 @@
+settings:
+  currency: ILS
+  timezone: Asia/Jerusalem
+  sqlite_path: ${SQLITE_PATH:data/real_estate_agent.db}
+  artifacts_dir: ${ARTIFACTS_DIR:artifacts}
+  email_subject_prefix: "Daily Apartment Deals"
+
+profiles:
+  - name: givatayim_4_rooms_deals
+    enabled: true
+    description: "4-room bargain apartments in Givatayim"
+    transaction: sale
+    filters:
+      city: "גבעתיים"
+      min_rooms: 4
+      max_rooms: 4
+      max_price: 3300000
+      min_size_sqm: 80
+      excluded_keywords:
+        - "קומת קרקע"
+        - "מרתף"
+      nice_to_have_keywords:
+        - "מעלית"
+        - "חניה"
+        - "ממד"
+        - "ממ\"ד"
+    scoring:
+      target_price_per_sqm: 36000
+      excellent_price_per_sqm: 32000
+      good_neighborhoods:
+        - "בורוכוב"
+        - "שיינקין"
+        - "ארלוזורוב"
+        - "רמבם"
+        - "קריית יוסף"
+      nice_to_have_keywords:
+        - "מעלית"
+        - "חניה"
+        - "ממד"
+        - "ממ\"ד"
+    sources:
+      - name: yad2
+        actor_id: swerve/yad2-scraper
+        limit: 5
+        estimated_cost_usd: 0.05
+        run_input:
+          city: "גבעתיים"
+          dealType: buy
+          propertyType: flat
+          roomsMin: 4
+          roomsMax: 4
+          maxPrice: 3300000
+          maxItems: 5
+      - name: madlan
+        actor_id: swerve/madlan-scraper
+        limit: 5
+        estimated_cost_usd: 0.05
+        run_input:
+          city: "גבעתיים"
+          dealType: buy
+          propertyType: flat
+          roomsMin: 4
+          roomsMax: 4
+          maxPrice: 3300000
+          maxItems: 5
+
+  - name: haifa_3_rooms_rented_good_area
+    enabled: true
+    description: "3-room apartments for sale in good Haifa areas, preferably already rented"
+    transaction: sale
+    filters:
+      city: "חיפה"
+      min_rooms: 3
+      max_rooms: 3
+      max_price: 1450000
+      min_size_sqm: 55
+      neighborhood_whitelist:
+        - "אחוזה"
+        - "כרמליה"
+        - "מרכז הכרמל"
+        - "רמת אלמוגי"
+        - "רמת בגין"
+        - "נוה שאנן"
+        - "נווה שאנן"
+        - "רמת אשכול"
+      required_any_keywords:
+        - "מושכרת"
+        - "מושכר"
+        - "שוכר"
+        - "שוכרים"
+        - "שכירות"
+      excluded_keywords:
+        - "קומת קרקע"
+        - "דרושה השקעה מלאה"
+    scoring:
+      target_price_per_sqm: 22000
+      excellent_price_per_sqm: 19000
+      good_neighborhoods:
+        - "אחוזה"
+        - "כרמליה"
+        - "מרכז הכרמל"
+        - "רמת אלמוגי"
+        - "רמת בגין"
+        - "נוה שאנן"
+        - "נווה שאנן"
+        - "רמת אשכול"
+      nice_to_have_keywords:
+        - "מושכרת"
+        - "שוכר"
+        - "חניה"
+        - "מעלית"
+        - "מרפסת"
+    sources:
+      - name: yad2
+        actor_id: swerve/yad2-scraper
+        limit: 5
+        estimated_cost_usd: 0.05
+        run_input:
+          city: "חיפה"
+          dealType: buy
+          propertyType: flat
+          roomsMin: 3
+          roomsMax: 3
+          maxPrice: 1450000
+          maxItems: 5
+      - name: madlan
+        actor_id: swerve/madlan-scraper
+        limit: 5
+        estimated_cost_usd: 0.05
+        run_input:
+          city: "חיפה"
+          dealType: buy
+          propertyType: flat
+          roomsMin: 3
+          roomsMax: 3
+          maxPrice: 1450000
+          maxItems: 5

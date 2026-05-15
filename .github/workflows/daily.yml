@@ -1,0 +1,48 @@
+name: Daily Real Estate Deal Agent
+
+on:
+  schedule:
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run real estate agent
+        run: python -m app.main --config configs/searches.yaml --all-profiles --send-email
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          APIFY_BUDGET_GUARD_ENABLED: "true"
+          APIFY_MONTHLY_BUDGET_USD: "5.00"
+          APIFY_BUDGET_SAFETY_BUFFER_USD: "0.10"
+          APIFY_SET_PLATFORM_HARD_LIMIT: "true"
+          APIFY_BUDGET_FAIL_CLOSED: "true"
+          EMAIL_BACKEND: ${{ secrets.EMAIL_BACKEND }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: "true"
+          SQLITE_PATH: data/real_estate_agent.db
+          ARTIFACTS_DIR: artifacts
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-estate-agent-artifacts
+          path: |
+            artifacts/
+            data/
