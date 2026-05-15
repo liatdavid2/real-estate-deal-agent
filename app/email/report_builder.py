@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict
+import re
 from datetime import datetime
 from html import escape
 from typing import Any
@@ -8,11 +8,11 @@ from typing import Any
 from app.models import ListingEvaluation
 
 
-def _money(value: int | None) -> str:
+def _money(value: int | float | None) -> str:
     if value is None:
         return "N/A"
 
-    return f"{value:,} ILS"
+    return f"{int(value):,} ₪"
 
 
 def _num(value: float | int | None) -> str:
@@ -25,11 +25,220 @@ def _num(value: float | int | None) -> str:
     return str(value)
 
 
+def _clean_text(value: str | None) -> str:
+    if not value:
+        return ""
+
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _listing_text(listing: Any) -> str:
+    parts = [
+        getattr(listing, "title", None),
+        getattr(listing, "address", None),
+        getattr(listing, "city", None),
+        getattr(listing, "neighborhood", None),
+        getattr(listing, "street", None),
+        getattr(listing, "description", None),
+        getattr(listing, "searchable_text", None),
+    ]
+
+    return _clean_text(" ".join(str(part) for part in parts if part))
+
+
+def _address(listing: Any) -> str:
+    title = getattr(listing, "title", None)
+    address = getattr(listing, "address", None)
+    city = getattr(listing, "city", None)
+    neighborhood = getattr(listing, "neighborhood", None)
+    street = getattr(listing, "street", None)
+
+    if address:
+        return str(address)
+
+    location_parts = [part for part in [street, neighborhood, city] if part]
+    if location_parts:
+        return " / ".join(str(part) for part in location_parts)
+
+    if title:
+        return str(title)
+
+    return "N/A"
+
+
+def _address_html(listing: Any) -> str:
+    address = _address(listing)
+    url = getattr(listing, "url", None)
+
+    if url:
+        return f"<a href='{escape(str(url))}'>{escape(address)}</a>"
+
+    return escape(address)
+
+
+def _floor(listing: Any) -> str:
+    floor = getattr(listing, "floor", None)
+    if floor is not None:
+        return _num(floor)
+
+    text = _listing_text(listing)
+
+    patterns = [
+        r"קומה\s*[:\-]?\s*(-?\d+)",
+        r"floor\s*[:\-]?\s*(-?\d+)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+    if "קרקע" in text:
+        return "קרקע"
+
+    return "N/A"
+
+
+def _yes_no_from_text(
+    listing: Any,
+    positive_keywords: list[str],
+    negative_keywords: list[str],
+) -> str:
+    text = _listing_text(listing).lower()
+
+    for keyword in negative_keywords:
+        if keyword.lower() in text:
+            return "לא"
+
+    for keyword in positive_keywords:
+        if keyword.lower() in text:
+            return "כן"
+
+    return "לא צויין"
+
+
+def _parking(listing: Any) -> str:
+    return _yes_no_from_text(
+        listing,
+        positive_keywords=[
+            "חניה",
+            "חנייה",
+            "parking",
+            "חניה בטאבו",
+            "חנייה בטאבו",
+        ],
+        negative_keywords=[
+            "ללא חניה",
+            "ללא חנייה",
+            "בלי חניה",
+            "בלי חנייה",
+            "אין חניה",
+            "אין חנייה",
+            "ללא parking",
+            "no parking",
+        ],
+    )
+
+
+def _elevator(listing: Any) -> str:
+    return _yes_no_from_text(
+        listing,
+        positive_keywords=[
+            "מעלית",
+            "elevator",
+        ],
+        negative_keywords=[
+            "ללא מעלית",
+            "בלי מעלית",
+            "אין מעלית",
+            "no elevator",
+        ],
+    )
+
+
+def _rental_info(listing: Any) -> str:
+    text = _listing_text(listing)
+
+    rented_keywords = [
+        "מושכרת",
+        "מושכר",
+        "שוכר",
+        "שוכרים",
+        "שכירות",
+        "שכר דירה",
+        "תשואה",
+        "rented",
+        "rent",
+    ]
+
+    is_rented = any(keyword.lower() in text.lower() for keyword in rented_keywords)
+
+    if not is_rented:
+        return "לא צויין"
+
+    patterns = [
+        r"מושכרת\s*(?:ב|ב-|ב־)?\s*([\d,]{3,6})",
+        r"מושכר\s*(?:ב|ב-|ב־)?\s*([\d,]{3,6})",
+        r"שכירות\s*(?:של|ב|ב-|ב־)?\s*([\d,]{3,6})",
+        r"שכר\s*דירה\s*(?:של|ב|ב-|ב־)?\s*([\d,]{3,6})",
+        r"רנט\s*(?:של|ב|ב-|ב־)?\s*([\d,]{3,6})",
+        r"rent\s*(?:of|for|at)?\s*([\d,]{3,6})",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            rent = match.group(1).replace(",", "")
+            try:
+                return f"כן, {_money(int(rent))}"
+            except ValueError:
+                return f"כן, {match.group(1)} ₪"
+
+    return "כן, מחיר לא צויין"
+
+
+def _row_from_evaluation(item: ListingEvaluation) -> dict[str, Any]:
+    return {
+        "profile_name": item.profile_name,
+        "listing": item.listing,
+        "score": item.score,
+        "status": item.status,
+        "filter_status": "Matched",
+        "filter_failures": [],
+    }
+
+
+def _row_from_raw_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "profile_name": item.get("profile_name", ""),
+        "listing": item["listing"],
+        "score": None,
+        "status": "",
+        "filter_status": "Matched" if item.get("filter_ok") else "Filtered out",
+        "filter_failures": item.get("filter_failures") or [],
+    }
+
+
+def _make_rows(
+    evaluations: list[ListingEvaluation],
+    raw_items: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    if evaluations:
+        return [_row_from_evaluation(item) for item in evaluations]
+
+    if raw_items:
+        return [_row_from_raw_item(item) for item in raw_items]
+
+    return []
+
+
 def build_text_report(
     evaluations: list[ListingEvaluation],
     notes: list[str] | None = None,
     raw_items: list[dict[str, Any]] | None = None,
 ) -> str:
+    rows = _make_rows(evaluations, raw_items)
+
     lines = [
         f"Daily apartment deal report - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "",
@@ -41,77 +250,39 @@ def build_text_report(
             lines.append(f"- {note}")
         lines.append("")
 
-    if not evaluations:
-        lines.append("No new matching listings or price drops today.")
+    if not rows:
+        lines.append("No listings collected.")
+        return "\n".join(lines)
+
+    lines.append("Apartments:")
+    lines.append("")
+
+    for row in rows:
+        listing = row["listing"]
+        failures = row.get("filter_failures") or []
+
+        lines.append(
+            " | ".join(
+                [
+                    f"Price: {_money(getattr(listing, 'price', None))}",
+                    f"Address: {_address(listing)}",
+                    f"Rooms: {_num(getattr(listing, 'rooms', None))}",
+                    f"Floor: {_floor(listing)}",
+                    f"Parking: {_parking(listing)}",
+                    f"Elevator: {_elevator(listing)}",
+                    f"Rent: {_rental_info(listing)}",
+                ]
+            )
+        )
+
+        url = getattr(listing, "url", None)
+        if url:
+            lines.append(f"URL: {url}")
+
+        if failures:
+            lines.append("Filtered out: " + "; ".join(failures))
+
         lines.append("")
-    else:
-        lines.append("Matched listings:")
-        lines.append("")
-
-        for item in evaluations:
-            listing = item.listing
-            title = (
-                listing.title
-                or listing.address
-                or listing.neighborhood
-                or listing.city
-                or "Apartment listing"
-            )
-
-            lines.append(f"[{item.profile_name}] {title}")
-            lines.append(f"Status: {item.status}, Score: {item.score}/100")
-            lines.append(
-                f"Price: {_money(listing.price)}, "
-                f"Rooms: {_num(listing.rooms)}, "
-                f"Size: {_num(listing.size_sqm)} sqm, "
-                f"Price/sqm: {_money(listing.price_per_sqm)}"
-            )
-
-            if listing.url:
-                lines.append(f"URL: {listing.url}")
-
-            if item.reasons:
-                lines.append("Reasons: " + "; ".join(item.reasons))
-
-            if item.risks:
-                lines.append("Check: " + "; ".join(item.risks))
-
-            lines.append("")
-
-    if raw_items:
-        lines.append("Collected listings before filtering:")
-        lines.append("")
-
-        for item in raw_items:
-            listing = item["listing"]
-            failures = item.get("filter_failures") or []
-            status = "MATCHED FILTERS" if item.get("filter_ok") else "FILTERED OUT"
-
-            title = (
-                listing.title
-                or listing.address
-                or listing.neighborhood
-                or listing.city
-                or "Apartment listing"
-            )
-
-            lines.append(f"[{item['profile_name']}] {title}")
-            lines.append(f"Filter status: {status}")
-            lines.append(
-                f"Source: {listing.source}, "
-                f"Price: {_money(listing.price)}, "
-                f"Rooms: {_num(listing.rooms)}, "
-                f"Size: {_num(listing.size_sqm)} sqm, "
-                f"City: {listing.city or 'N/A'}"
-            )
-
-            if failures:
-                lines.append("Why filtered out: " + "; ".join(failures))
-
-            if listing.url:
-                lines.append(f"URL: {listing.url}")
-
-            lines.append("")
 
     lines.append("This report is an automated filter and scoring aid, not financial advice.")
 
@@ -124,158 +295,88 @@ def build_html_report(
     raw_items: list[dict[str, Any]] | None = None,
 ) -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    grouped: dict[str, list[ListingEvaluation]] = defaultdict(list)
-    for evaluation in evaluations:
-        grouped[evaluation.profile_name].append(evaluation)
+    rows = _make_rows(evaluations, raw_items)
 
     parts = [
         "<html>",
-        "<body style='font-family: Arial, sans-serif; direction: ltr;'>",
-        "<h2>Daily Apartment Deal Report</h2>",
-        f"<p>{escape(now)}</p>",
+        "<body style='font-family:Arial,sans-serif;direction:rtl;text-align:right;margin:0;padding:12px;'>",
+        "<h3 style='margin:0 0 8px 0;'>Daily Apartment Deal Report</h3>",
+        f"<p style='margin:0 0 12px 0;font-size:12px;color:#666;'>{escape(now)}</p>",
     ]
 
     if notes:
         parts.append(
             "<div style='border:1px solid #f0c36d;background:#fff8e5;"
-            "border-radius:12px;padding:12px;margin:12px 0;max-width:1100px;'>"
+            "border-radius:8px;padding:8px;margin:8px 0;font-size:12px;'>"
         )
-        parts.append("<b>System notes</b><ul>")
+        parts.append("<b>System notes</b><ul style='margin:6px 0;'>")
 
         for note in notes:
             parts.append(f"<li>{escape(note)}</li>")
 
         parts.append("</ul></div>")
 
-    if not evaluations:
-        parts.append("<p>No new matching listings or price drops today.</p>")
+    if not rows:
+        parts.append("<p>No listings collected.</p>")
     else:
-        parts.append("<h3>Matched listings</h3>")
+        if evaluations:
+            parts.append(
+                f"<p style='font-size:12px;margin:0 0 8px 0;'>"
+                f"Matched listings: {len(evaluations)}</p>"
+            )
+        else:
+            parts.append(
+                f"<p style='font-size:12px;margin:0 0 8px 0;'>"
+                f"No matching listings. Showing collected listings before filtering: {len(rows)}</p>"
+            )
 
-        for profile_name, items in grouped.items():
-            parts.append(f"<h4>{escape(profile_name)}</h4>")
-
-            for evaluation in sorted(items, key=lambda x: x.score, reverse=True):
-                listing = evaluation.listing
-
-                title = (
-                    listing.title
-                    or listing.address
-                    or listing.neighborhood
-                    or listing.city
-                    or "Apartment listing"
-                )
-
-                url_html = (
-                    f"<a href='{escape(listing.url)}'>Open listing</a>"
-                    if listing.url
-                    else "No URL"
-                )
-
-                reasons = "".join(f"<li>{escape(reason)}</li>" for reason in evaluation.reasons)
-                risks = "".join(f"<li>{escape(risk)}</li>" for risk in evaluation.risks)
-
-                location = " / ".join(
-                    value for value in [listing.city, listing.neighborhood, listing.street] if value
-                ) or "N/A"
-
-                parts.append(
-                    f"""
-                    <div style="border:1px solid #ddd;border-radius:12px;padding:14px;margin:14px 0;max-width:1100px;">
-                      <h4 style="margin:0 0 8px 0;">{escape(title)}</h4>
-                      <p style="margin:4px 0;">
-                        <b>Status:</b> {escape(evaluation.status)}
-                        |
-                        <b>Deal score:</b> {evaluation.score}/100
-                        |
-                        <b>Source:</b> {escape(listing.source)}
-                      </p>
-                      <p style="margin:4px 0;">
-                        <b>Price:</b> {escape(_money(listing.price))}
-                        |
-                        <b>Rooms:</b> {escape(_num(listing.rooms))}
-                        |
-                        <b>Size:</b> {escape(_num(listing.size_sqm))} sqm
-                        |
-                        <b>Price/sqm:</b> {escape(_money(listing.price_per_sqm))}
-                      </p>
-                      <p style="margin:4px 0;"><b>Location:</b> {escape(location)}</p>
-                      <p>{url_html}</p>
-                      <p><b>Why it looks interesting</b></p>
-                      <ul>{reasons or "<li>No positive reason generated.</li>"}</ul>
-                      <p><b>Verify before contacting</b></p>
-                      <ul>{risks or "<li>No obvious risk found in listing text.</li>"}</ul>
-                    </div>
-                    """
-                )
-
-    if raw_items:
-        parts.append("<h3>Collected listings before filtering</h3>")
         parts.append(
             """
-            <table style="border-collapse:collapse;width:100%;max-width:1200px;font-size:13px;">
+            <table style="
+                border-collapse:collapse;
+                width:100%;
+                font-size:12px;
+                table-layout:fixed;
+            ">
               <thead>
                 <tr style="background:#f4f4f4;">
-                  <th style="border:1px solid #ddd;padding:8px;text-align:left;">Profile</th>
-                  <th style="border:1px solid #ddd;padding:8px;text-align:left;">Source</th>
-                  <th style="border:1px solid #ddd;padding:8px;text-align:left;">Listing</th>
-                  <th style="border:1px solid #ddd;padding:8px;text-align:left;">Price</th>
-                  <th style="border:1px solid #ddd;padding:8px;text-align:left;">Rooms</th>
-                  <th style="border:1px solid #ddd;padding:8px;text-align:left;">Size</th>
-                  <th style="border:1px solid #ddd;padding:8px;text-align:left;">Filter status</th>
-                  <th style="border:1px solid #ddd;padding:8px;text-align:left;">Why filtered out</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:12%;">מחיר</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:32%;">כתובת</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:8%;">חדרים</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:8%;">קומה</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:8%;">חניה</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:8%;">מעלית</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:16%;">שכירות</th>
+                  <th style="border:1px solid #ddd;padding:5px;width:8%;">סטטוס</th>
                 </tr>
               </thead>
               <tbody>
             """
         )
 
-        for item in raw_items:
-            listing = item["listing"]
-            failures = item.get("filter_failures") or []
-            filter_ok = bool(item.get("filter_ok"))
+        for row in rows:
+            listing = row["listing"]
+            failures = row.get("filter_failures") or []
+            filter_status = row.get("filter_status") or ""
+            is_filtered_out = filter_status == "Filtered out"
 
-            title = (
-                listing.title
-                or listing.address
-                or listing.neighborhood
-                or listing.city
-                or "Apartment listing"
-            )
+            status_text = "נפל" if is_filtered_out else "עבר"
+            if failures:
+                status_text += ": " + "; ".join(str(failure) for failure in failures)
 
-            if listing.url:
-                title_html = f"<a href='{escape(listing.url)}'>{escape(title)}</a>"
-            else:
-                title_html = escape(title)
-
-            location = " / ".join(
-                value for value in [listing.city, listing.neighborhood, listing.street] if value
-            )
-
-            if location:
-                title_html += (
-                    f"<br><span style='color:#666;font-size:12px;'>"
-                    f"{escape(location)}"
-                    f"</span>"
-                )
-
-            status = "Matched filters" if filter_ok else "Filtered out"
-            failures_text = "; ".join(failures) if failures else ""
-
-            row_background = "#eefaf0" if filter_ok else "#fff"
+            background = "#fff" if is_filtered_out else "#eefaf0"
 
             parts.append(
                 f"""
-                <tr style="background:{row_background};">
-                  <td style="border:1px solid #ddd;padding:8px;">{escape(item["profile_name"])}</td>
-                  <td style="border:1px solid #ddd;padding:8px;">{escape(listing.source or "N/A")}</td>
-                  <td style="border:1px solid #ddd;padding:8px;">{title_html}</td>
-                  <td style="border:1px solid #ddd;padding:8px;">{escape(_money(listing.price))}</td>
-                  <td style="border:1px solid #ddd;padding:8px;">{escape(_num(listing.rooms))}</td>
-                  <td style="border:1px solid #ddd;padding:8px;">{escape(_num(listing.size_sqm))} sqm</td>
-                  <td style="border:1px solid #ddd;padding:8px;">{escape(status)}</td>
-                  <td style="border:1px solid #ddd;padding:8px;">{escape(failures_text)}</td>
+                <tr style="background:{background};">
+                  <td style="border:1px solid #ddd;padding:5px;white-space:nowrap;">{escape(_money(getattr(listing, "price", None)))}</td>
+                  <td style="border:1px solid #ddd;padding:5px;overflow:hidden;text-overflow:ellipsis;">{_address_html(listing)}</td>
+                  <td style="border:1px solid #ddd;padding:5px;text-align:center;">{escape(_num(getattr(listing, "rooms", None)))}</td>
+                  <td style="border:1px solid #ddd;padding:5px;text-align:center;">{escape(_floor(listing))}</td>
+                  <td style="border:1px solid #ddd;padding:5px;text-align:center;">{escape(_parking(listing))}</td>
+                  <td style="border:1px solid #ddd;padding:5px;text-align:center;">{escape(_elevator(listing))}</td>
+                  <td style="border:1px solid #ddd;padding:5px;white-space:nowrap;">{escape(_rental_info(listing))}</td>
+                  <td style="border:1px solid #ddd;padding:5px;font-size:11px;">{escape(status_text)}</td>
                 </tr>
                 """
             )
@@ -283,7 +384,7 @@ def build_html_report(
         parts.append("</tbody></table>")
 
     parts.append(
-        "<p style='font-size:12px;color:#666;margin-top:18px;'>"
+        "<p style='font-size:11px;color:#666;margin-top:10px;'>"
         "This report is an automated filter and scoring aid, not financial advice."
         "</p>"
     )
