@@ -11,11 +11,11 @@ profiles:
     description: "4-room bargain apartments in Givatayim up to 2,900,000 ILS"
     transaction: sale
     filters:
-      city: "גבעתיים"
+      city: "Givatayim"
       min_rooms: 4
       max_rooms: 4
       max_price: 2900000
-      min_size_sqm: 50
+      min_size_sqm: 0
       excluded_keywords:
         - "מרתף"
         - "מחסן"
@@ -49,7 +49,7 @@ profiles:
         limit: 5
         estimated_cost_usd: 0.05
         run_input:
-          city: "גבעתיים"
+          city: "Givatayim"
           dealType: buy
           minRooms: 4
           maxRooms: 4
@@ -61,7 +61,7 @@ profiles:
         limit: 5
         estimated_cost_usd: 0.05
         run_input:
-          city: "גבעתיים"
+          city: "Givatayim"
           dealType: buy
           propertyType: flat
           minRooms: 4
@@ -78,7 +78,7 @@ profiles:
       min_rooms: 2
       max_rooms: 3
       max_price: 800000
-      min_size_sqm: 30
+      min_size_sqm: 0
       neighborhood_whitelist:
         - "אחוזה"
         - "כרמליה"
