@@ -70,10 +70,10 @@ profiles:
     transaction: sale
     filters:
       city: "חיפה"
-      min_rooms: 3
+      min_rooms: 1
       max_rooms: 3
-      max_price: 1450000
-      min_size_sqm: 55
+      max_price: 800000
+      min_size_sqm: 35
       neighborhood_whitelist:
         - "אחוזה"
         - "כרמליה"
@@ -90,7 +90,6 @@ profiles:
         - "שוכרים"
         - "שכירות"
       excluded_keywords:
-        - "קומת קרקע"
         - "דרושה השקעה מלאה"
     scoring:
       target_price_per_sqm: 22000
@@ -121,7 +120,7 @@ profiles:
           propertyType: flat
           roomsMin: 3
           roomsMax: 3
-          maxPrice: 1450000
+          maxPrice: 800000
           maxItems: 5
       - name: madlan
         actor_id: swerve/madlan-scraper
@@ -133,5 +132,5 @@ profiles:
           propertyType: flat
           roomsMin: 3
           roomsMax: 3
-          maxPrice: 1450000
+          maxPrice: 800000
           maxItems: 5
